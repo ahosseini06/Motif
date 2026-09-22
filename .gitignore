@@ -1,0 +1,6 @@
+.build/
+build/
+*.motif/
+.DS_Store
+Eval/synth/
+Eval/out/
