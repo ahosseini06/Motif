@@ -19,6 +19,8 @@ final class ProjectModel {
     /// Cached: asking the Keychain on every view update is slow and can prompt.
     private(set) var hasTagger = false
     private(set) var spend: (tokensIn: Int, tokensOut: Int) = (0, 0)
+    /// Set when the description stage has stopped itself over a key problem. Shown as a banner; cleared by a new key.
+    private(set) var describeIssue: String?
 
     /// The clip shown in the inspector. `selectedIDs` is everything highlighted — what a drag carries.
     var selection: Int64? { didSet { if let selection, !selectedIDs.contains(selection) { selectedIDs = [selection] } else if selection == nil { selectedIDs = [] } } }
@@ -59,6 +61,7 @@ final class ProjectModel {
         hasTagger = tagger != nil
         engine = ProjectEngine(project: project, tagger: tagger)
         engine.onStatus = { [weak self] text in Task { @MainActor in self?.status = text } }
+        engine.onDescribeHalted = { [weak self] reason in Task { @MainActor in self?.describeIssue = reason } }
 
         observers.append(ValueObservation.tracking { try Project.listRequest().fetchAll($0) }
             .start(in: project.db, scheduling: .async(onQueue: .main), onError: { _ in }, onChange: { [weak self] in self?.items = $0; self?.scheduleIndexRebuild() }))
@@ -82,6 +85,7 @@ final class ProjectModel {
     }
 
     func refreshTagger() {
+        describeIssue = nil
         let tagger = Self.makeTagger()
         hasTagger = tagger != nil
         engine.setTagger(tagger)
@@ -90,6 +94,7 @@ final class ProjectModel {
     }
 
     func rescan() {
+        describeIssue = nil
         sourceOnline = project.isSourceOnline
         try? engine.retryFailed()
         engine.start()

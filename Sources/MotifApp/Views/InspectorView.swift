@@ -148,7 +148,9 @@ struct InspectorView: View {
         case .blocked: return "The model's safety filter declined to describe this clip."
         case .failed: return clip.error ?? "Description failed."
         case .skipped: return clip.analysisState == .done ? "On-device only — this project never uploads." : "—"
-        default: return model.hasTagger ? "Describing…" : "Add a Gemini API key in Settings to describe clips."
+        default:
+            if let issue = model.describeIssue { return "Descriptions are paused — \(issue)" }
+            return model.hasTagger ? "Describing…" : "Add your own Gemini API key in Settings (⌘,) to describe clips."
         }
     }
 

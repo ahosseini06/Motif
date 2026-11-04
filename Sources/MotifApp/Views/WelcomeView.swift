@@ -24,6 +24,7 @@ struct WelcomeView: View {
                 .controlSize(.large)
                 .padding(.top, 6)
                 Spacer()
+                keyStatus
                 Text("Camera motion is measured on this Mac. Only a small, silent 360p proxy is ever sent for description — and never for projects marked on-device only.")
                     .font(.caption).foregroundStyle(Theme.textTertiary).frame(maxWidth: 360, alignment: .leading)
             }
@@ -50,6 +51,31 @@ struct WelcomeView: View {
             .overlay(alignment: .leading) { Theme.hairline.frame(width: 1) }
         }
         .background(Theme.surface)
+    }
+
+    /// Motif brings no key of its own, so say so on the first screen rather than letting someone wonder
+    /// why their clips have motion but no words.
+    @ViewBuilder private var keyStatus: some View {
+        if ProcessInfo.processInfo.environment["MOTIF_FAKE_TAGGER"] == "1" {
+            EmptyView()
+        } else if app.hasAPIKey {
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.accent)
+                Text("Your Gemini key is set — descriptions are on.").foregroundStyle(Theme.textSecondary)
+            }
+            .font(.callout)
+            .frame(maxWidth: 360, alignment: .leading)
+        } else {
+            HStack(spacing: 8) {
+                Image(systemName: "key").foregroundStyle(Theme.accent)
+                Text("Bring your own Gemini key for descriptions.").foregroundStyle(Theme.textSecondary)
+                SettingsLink { Text("Add Key…") }
+                Link("Get one", destination: SettingsView.keyPage)
+            }
+            .font(.callout)
+            .controlSize(.small)
+            .frame(maxWidth: 360, alignment: .leading)
+        }
     }
 }
 

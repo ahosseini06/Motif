@@ -11,11 +11,14 @@ public final class ProjectEngine: @unchecked Sendable {
     public var describeConcurrency = 4
     /// Human-readable status lines (model download, scan progress).
     public var onStatus: (@Sendable (String) -> Void)?
+    /// Raised with a reason when the description stage stops itself over a key problem, and with nil when it resumes.
+    public var onDescribeHalted: (@Sendable (String?) -> Void)?
 
     private let lock = NSLock()
     private var tagger: Tagger?
     private var priority: [Int64] = []
     private var paused = false
+    private var describeHalt: String?
     private var tasks: [Task<Void, Never>] = []
     private var depth: DepthEstimator?
 
@@ -25,8 +28,13 @@ public final class ProjectEngine: @unchecked Sendable {
     }
 
     public func setTagger(_ tagger: Tagger?) {
-        lock.withLock { self.tagger = tagger }
+        lock.withLock { self.tagger = tagger; describeHalt = nil }
+        onDescribeHalted?(nil)
     }
+
+    /// Why the description stage has stopped asking, if it has: a wrong key, an unreachable model, a spent quota.
+    /// Nothing is marked failed while it's halted — the clips stay pending, so they go out as soon as the key is fixed.
+    public var describeHalted: String? { lock.withLock { describeHalt } }
 
     /// Clips on screen go first.
     public func prioritise(_ ids: [Int64]) {
@@ -70,6 +78,8 @@ public final class ProjectEngine: @unchecked Sendable {
     }
 
     public func retryFailed() throws {
+        lock.withLock { describeHalt = nil }
+        onDescribeHalted?(nil)
         try project.db.write { db in
             try db.execute(sql: "UPDATE clip SET analysisState = 'pending', error = NULL WHERE analysisState = 'failed'")
             try db.execute(sql: "UPDATE clip SET describeState = 'pending', error = NULL WHERE describeState IN ('failed', 'blocked') AND analysisState = 'done'")
@@ -155,6 +165,7 @@ public final class ProjectEngine: @unchecked Sendable {
             guard let clip = claim(stage) else {
                 // Description work appears as analysis completes; stop once both queues are dry.
                 idleRounds += 1
+                if stage == .describe, describeHalted != nil { return }
                 if stage == .analysis || (idleRounds > 3 && !hasPendingAnalysis()) { return }
                 try? await Task.sleep(for: .milliseconds(500))
                 continue
@@ -174,7 +185,7 @@ public final class ProjectEngine: @unchecked Sendable {
 
     private func claim(_ stage: Stage) -> ClipRecord? {
         let wanted = lock.withLock { priority }
-        let tagger = lock.withLock { self.tagger }
+        let (tagger, halt) = lock.withLock { (self.tagger, self.describeHalt) }
         let neverUpload = project.neverUpload
         return try? project.db.write { db -> ClipRecord? in
             let column = stage == .analysis ? "analysisState" : "describeState"
@@ -185,7 +196,7 @@ public final class ProjectEngine: @unchecked Sendable {
                     try db.execute(sql: "UPDATE clip SET describeState = 'skipped' WHERE \(filter)")
                     return nil
                 }
-                if tagger == nil { return nil }
+                if tagger == nil || halt != nil { return nil }
             }
             var clip: ClipRecord?
             if !wanted.isEmpty {
@@ -246,6 +257,16 @@ public final class ProjectEngine: @unchecked Sendable {
                 try db.execute(sql: "UPDATE clip SET describeState = 'done', error = NULL WHERE id = ?", arguments: [id])
             }
             try? project.embedMissingText()
+        } catch MotifError.auth(let reason) {
+            // Not this clip's fault: leave it pending and stop the stage, so a mistyped key costs one request, not one per clip.
+            let first = lock.withLock { () -> Bool in
+                defer { describeHalt = reason }
+                return describeHalt == nil
+            }
+            _ = try? await project.db.write { db in
+                try db.execute(sql: "UPDATE clip SET describeState = 'pending', error = NULL WHERE id = ?", arguments: [id])
+            }
+            if first { onDescribeHalted?(reason) }
         } catch {
             let blocked = { if case MotifError.blocked = error { return true } else { return false } }()
             _ = try? await project.db.write { db in

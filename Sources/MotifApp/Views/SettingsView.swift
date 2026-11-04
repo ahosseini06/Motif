@@ -12,10 +12,11 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section {
-                SecureField(hasStoredKey ? "•••••••••••• (stored in Keychain)" : "Paste your Gemini API key", text: $key)
+                SecureField(hasStoredKey ? "•••••••••••• (stored in your Keychain)" : "Paste your Gemini API key", text: $key)
                 TextField("Model", text: $model, prompt: Text(Settings.defaultModel))
                 HStack {
                     Button("Save & Test") { save() }.disabled(checking || (key.isEmpty && !hasStoredKey))
+                    Link("Get a key…", destination: Self.keyPage).help(Self.keyPage.absoluteString)
                     if hasStoredKey { Button("Remove Key", role: .destructive) { Settings.apiKey = nil; hasStoredKey = false; result = nil; app.apiKeyChanged() } }
                     if checking { ProgressView().controlSize(.small) }
                     if let result {
@@ -23,9 +24,12 @@ struct SettingsView: View {
                             .foregroundStyle(result.ok ? .green : .red).font(.callout).lineLimit(3)
                     }
                 }
-            } header: { Text("Descriptions — Gemini API") } footer: {
-                Text("Use a paid-tier key: Google doesn't train on paid-tier data. Motif sends one small, silent 360p proxy per clip (about 24 frames) plus the camera motion it measured, and nothing from projects set to On-Device Only. Typical cost is around $1 per 1,000 clips.")
-                    .foregroundStyle(.secondary)
+            } header: { Text("Descriptions — your Gemini API key") } footer: {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Motif has no account and no server of its own: descriptions are billed to your key, and nothing else about it leaves this Mac. The key is stored in your login Keychain — or set GEMINI_API_KEY in the environment, which wins over it.")
+                    Text("Each clip costs one request carrying a silent 360p proxy (about 24 frames) and the camera motion measured on this Mac — roughly $1 per 1,000 clips. A free key works for trying it out, with much lower rate limits and Google reserving the right to train on what you send; for client footage use a paid-tier key, which they don't train on. Projects set to On-Device Only never upload anything at all.")
+                }
+                .foregroundStyle(.secondary)
             }
 
             Section("On this Mac") {
@@ -37,6 +41,8 @@ struct SettingsView: View {
         .frame(width: 560)
         .fixedSize(horizontal: false, vertical: true)
     }
+
+    static let keyPage = URL(string: "https://aistudio.google.com/apikey")!
 
     private func save() {
         Settings.model = model.trimmingCharacters(in: .whitespaces)

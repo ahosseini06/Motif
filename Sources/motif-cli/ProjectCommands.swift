@@ -31,6 +31,7 @@ extension Commands {
         let started = Date()
         await engine.runToCompletion()
         try report(project, elapsed: Date().timeIntervalSince(started))
+        if let halt = engine.describeHalted { print("\ndescriptions stopped — \(halt)\nthe clips are still pending: fix the key and run describe again") }
     }
 
     static func report(_ project: Project, elapsed: Double) throws {

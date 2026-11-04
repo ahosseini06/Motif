@@ -33,12 +33,24 @@ public struct GeminiTagger: Tagger {
                     optional.remove(drop)
                     continue
                 }
+                // A malformed key comes back as 400 API_KEY_INVALID, not 401.
+                if lower.contains("api key") || lower.contains("api_key") {
+                    throw MotifError.auth("That Gemini API key isn't valid. \(message)")
+                }
                 throw MotifError.tagging("Gemini rejected the request: \(message)")
-            case 429, 500, 502, 503, 504:
+            case 429:
+                // Per-minute limits recover; a daily cap doesn't, so stop asking after the backoff is spent.
+                if attempt >= 6 {
+                    throw MotifError.auth("This key's Gemini quota is used up — \(Self.errorMessage(data))")
+                }
+                try await Task.sleep(for: .seconds(min(60, pow(2, Double(attempt))) + Double.random(in: 0...1)))
+            case 500, 502, 503, 504:
                 if attempt >= 6 { throw MotifError.tagging("Gemini unavailable (HTTP \(status)): \(Self.errorMessage(data))") }
                 try await Task.sleep(for: .seconds(min(60, pow(2, Double(attempt))) + Double.random(in: 0...1)))
             case 401, 403:
-                throw MotifError.tagging("Gemini refused the API key (HTTP \(status)): \(Self.errorMessage(data))")
+                throw MotifError.auth("Gemini refused this API key — \(Self.errorMessage(data))")
+            case 404:
+                throw MotifError.auth("This key can't reach the model \"\(model)\" — \(Self.errorMessage(data))")
             default:
                 throw MotifError.tagging("Gemini HTTP \(status): \(Self.errorMessage(data))")
             }
@@ -120,7 +132,18 @@ public struct GeminiTagger: Tagger {
     public func verify() async throws {
         let body: [String: Any] = ["contents": [["parts": [["text": "Reply with OK."]]]], "generationConfig": ["maxOutputTokens": 8]]
         let (data, status) = try await post(body)
-        guard status == 200 else { throw MotifError.tagging("HTTP \(status): \(Self.errorMessage(data))") }
+        guard status != 200 else { return }
+        let message = Self.errorMessage(data)
+        switch status {
+        case 400 where message.lowercased().contains("api") && message.lowercased().contains("key"), 401, 403:
+            throw MotifError.auth("Gemini refused this key — \(message)")
+        case 404:
+            throw MotifError.auth("The key works, but it can't reach the model \"\(model)\" — \(message)")
+        case 429:
+            throw MotifError.auth("The key works, but its quota is used up — \(message)")
+        default:
+            throw MotifError.tagging("HTTP \(status): \(message)")
+        }
     }
 }
 

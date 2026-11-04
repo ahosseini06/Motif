@@ -91,8 +91,10 @@ struct ProjectView: View {
                    action: ("Check Again", { model.rescan() }))
         }
         if !app.hasAPIKey && !model.neverUpload && ProcessInfo.processInfo.environment["MOTIF_FAKE_TAGGER"] != "1" {
-            Banner(icon: "key", text: "Camera movement is being measured on this Mac. Add a Gemini API key to get descriptions.",
-                   action: ("Add Key…", { NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) }))
+            Banner(icon: "key", text: "Camera movement is being measured on this Mac. Add your own Gemini API key to get descriptions — it's free to create and costs about $1 per 1,000 clips.",
+                   settings: "Add Key…")
+        } else if let issue = model.describeIssue {
+            Banner(icon: "exclamationmark.triangle", text: "Descriptions are paused: \(issue)", settings: "Fix Key…")
         }
     }
 
@@ -132,13 +134,16 @@ extension Notification.Name {
 private struct Banner: View {
     let icon: String, text: String
     var action: (String, () -> Void)?
+    /// A title here opens Settings through SwiftUI's own link, which works whatever the private selector is called.
+    var settings: String?
 
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: icon).foregroundStyle(Theme.accent)
-            Text(text).font(.callout).foregroundStyle(Theme.textSecondary)
+            Text(text).font(.callout).foregroundStyle(Theme.textSecondary).fixedSize(horizontal: false, vertical: true)
             Spacer()
             if let action { Button(action.0, action: action.1).controlSize(.small) }
+            if let settings { SettingsLink { Text(settings) }.controlSize(.small) }
         }
         .padding(.horizontal, 18).padding(.vertical, 9)
         .background(Theme.accent.opacity(0.06))
@@ -171,7 +176,7 @@ private struct ProgressPill: View {
     var body: some View {
         let c = model.counts
         let analysing = c.analysed < c.total - failedAnalysis
-        let describing = model.hasTagger && !model.neverUpload && c.described < c.describable
+        let describing = model.hasTagger && !model.neverUpload && model.describeIssue == nil && c.described < c.describable
         Button { showing.toggle() } label: {
             HStack(spacing: 7) {
                 if model.paused { Image(systemName: "pause.fill").font(.caption2) }
@@ -193,6 +198,7 @@ private struct ProgressPill: View {
         let c = model.counts
         if !model.status.isEmpty { return model.status }
         if model.paused { return "Paused" }
+        if model.describeIssue != nil { return "Descriptions paused — check your key" }
         var parts: [String] = []
         if analysing { parts.append("Measuring motion \(c.analysed)/\(c.total)") }
         if describing { parts.append("Describing \(c.described)/\(c.describable)") }
@@ -207,6 +213,9 @@ private struct ProgressPill: View {
         return VStack(alignment: .leading, spacing: 8) {
             row("Motion measured", "\(c.analysed) of \(c.total)")
             row("Described", model.neverUpload ? "off — on-device only" : "\(c.described) of \(c.describable)")
+            if let issue = model.describeIssue {
+                Text(issue).font(.caption).foregroundStyle(Theme.textTertiary).fixedSize(horizontal: false, vertical: true)
+            }
             if c.failed > 0 { row("Failed", "\(c.failed)") }
             if blocked > 0 { row("Blocked by safety filter", "\(blocked)") }
             if unsupported > 0 { row("Unsupported files", "\(unsupported)") }

@@ -17,13 +17,39 @@ open build/Motif.app
 
 1. **New Project** → choose the footage folder. Analysis starts immediately; the first project downloads the depth
    model (~50 MB, Depth Anything V2 Small, Apache-2.0) into `~/Library/Application Support/Motif/Models`.
-2. **Settings (⌘,)** → paste a Gemini API key → *Save & Test*. Descriptions start as soon as the key verifies.
-   The key lives in the Keychain. Because the app is ad-hoc signed, macOS asks to allow Keychain access again after each rebuild.
+2. **Settings (⌘,)** → paste your own Gemini API key → *Save & Test*. Descriptions start as soon as the key verifies.
+   See [Bring your own key](#bring-your-own-key).
 3. Hover a clip to play it, click for the inspector, space to play/pause, arrows to move, click a segment to loop it,
    drag on the motion graph to scrub. *⋯ → On-Device Only* stops a project from ever uploading.
 
 Projects are `.motif` packages (default `~/Movies/Motif/`): catalog + posters + hover filmstrips + the 360p proxies,
 so they stay browsable with the footage drive unplugged. Footage is only ever read.
+
+## Bring your own key
+
+Motif has no account, no server and no key of its own. Camera movement is measured entirely on this Mac; only the
+description step calls an API, and it calls it with **your** key, billed to **your** Google account.
+
+- **Get a key** at <https://aistudio.google.com/apikey> (Settings has a *Get a key…* link). Paste it into
+  Settings (⌘,) → *Save & Test*, which sends one eight-token request to prove the key and the model ID work before
+  any footage goes out.
+- **Where it's stored**: your login Keychain, under the service `ai.motif.app`. It is read once per launch and never
+  written anywhere else — not into the project package, not into preferences, not into logs. *Remove Key* deletes it.
+- **Or don't store it**: `GEMINI_API_KEY` in the environment wins over the Keychain, which is how the CLI and CI run.
+- **Free or paid**: a free key works for trying Motif, with much lower rate limits and Google reserving the right to
+  train on what you send. For client footage use a paid-tier key, which they don't train on.
+- **Cost**: one request per clip carrying a silent 360p proxy (≈ 24 frames) plus the measured motion. Measured at
+  **$0.012 for 17 clips ≈ $0.70 per 1,000**. The project's progress pill shows tokens and running cost.
+- **Model**: `gemini-3.5-flash-lite` by default, editable in Settings — any `generateContent` model that accepts video
+  and a JSON schema will do, so a key with different access just needs a different name typed in.
+- **No key, or a key with a problem**: everything else still works. Clips are catalogued, motion is measured, chips,
+  segments, movement search and the shot designer all run on-device; only the written description and description
+  search wait for a key. A wrong key, an unreachable model or a spent quota stops the description stage after the
+  first clip and says why in a banner — the remaining clips stay *pending*, never *failed*, and go out as soon as the
+  key is fixed. Nothing re-sends what has already been described.
+- **Nothing at all leaves the Mac** for a project switched to *⋯ → On-Device Only*.
+- **The Keychain prompt**: an ad-hoc signed build has a new code identity after every rebuild, so macOS asks once more
+  to allow access to the stored key. *Always Allow* holds until the next rebuild; a notarised build (below) ends it.
 
 ## Sharing it
 
@@ -148,3 +174,20 @@ There is no `swift test`: neither XCTest nor Swift Testing ships with the Comman
 - Added, not in the plan: minimum-sweep rule, depth-offset resolution, fast-pan zoom correction, flow self-calibration
   (all in the motion spec), a text filter over names / descriptions / chips, `--snapshot` for scripted UI checks.
 - Proxies are ~1 MB per clip, not the estimated 0.3 MB (H.264 at ~1 fps is nearly all keyframes). Token cost is unaffected.
+
+## Licence
+
+Motif is MIT-licensed — see [LICENSE](LICENSE).
+
+What it depends on, and under what terms:
+
+| | |
+|---|---|
+| [GRDB.swift](https://github.com/groue/GRDB.swift) | MIT — the only third-party source dependency |
+| [Depth Anything V2 Small](https://huggingface.co/apple/coreml-depth-anything-v2-small) (Apple's Core ML package) | Apache-2.0 — downloaded on first use, not vendored |
+| AVFoundation, Vision, SceneKit, NaturalLanguage, Metal | Apple system frameworks |
+| Gemini | your own API key, your own account — see [Bring your own key](#bring-your-own-key) |
+
+Weights that **must not** be shipped with this app, because their licences forbid commercial or redistributed use:
+Apple FastVLM, MobileCLIP2, CameraBench, and Depth Anything 3 Large / Giant (CC-BY-NC). The motion pipeline
+deliberately needs none of them.

@@ -3,11 +3,13 @@ import AVFoundation
 import CoreImage
 
 public enum MotifError: Error, LocalizedError {
-    case unsupported(String), analysis(String), tagging(String), blocked(String), project(String)
+    /// `auth` is a key-level problem — a wrong key, a model the key can't reach, an exhausted quota. It is not the
+    /// clip's fault, so the pipeline stops the description stage instead of marking every clip failed in turn.
+    case unsupported(String), analysis(String), tagging(String), blocked(String), auth(String), project(String)
 
     public var errorDescription: String? {
         switch self {
-        case .unsupported(let m), .analysis(let m), .tagging(let m), .blocked(let m), .project(let m): return m
+        case .unsupported(let m), .analysis(let m), .tagging(let m), .blocked(let m), .auth(let m), .project(let m): return m
         }
     }
 }
