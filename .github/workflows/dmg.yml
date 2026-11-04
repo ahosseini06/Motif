@@ -1,0 +1,43 @@
+# Builds Motif.dmg from every push to main and publishes it as the repo's latest release, so
+#   https://github.com/ahosseini06/Motif/releases/latest/download/Motif.dmg
+# always serves the newest build. The website's Download button links there.
+#
+# Ad-hoc signed for now (see Scripts/package.sh). To ship notarised builds, import a Developer ID
+# certificate into a temporary keychain here and set MOTIF_SIGN_IDENTITY / MOTIF_NOTARY_PROFILE.
+name: Build DMG
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# One build at a time; a newer push waits for the running one rather than cancelling it mid-publish.
+concurrency:
+  group: build-dmg
+  cancel-in-progress: false
+
+jobs:
+  dmg:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build and package
+        run: Scripts/package.sh
+
+      - name: Publish as the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp build/Motif-*.dmg build/Motif.dmg
+          gh release delete latest-build --cleanup-tag --yes || true
+          gh release create latest-build build/Motif.dmg \
+            --target "$GITHUB_SHA" \
+            --latest \
+            --title "Latest build (${GITHUB_SHA::7})" \
+            --notes "Built automatically from $GITHUB_SHA on main.
+
+          Needs a Mac with Apple Silicon running macOS 26 or later. This build isn't notarised yet: the first time you open it, go to System Settings → Privacy & Security and click Open Anyway (details in the disk image's Read me first)."
