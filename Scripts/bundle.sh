@@ -14,7 +14,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/MotifApp "$APP/Contents/MacOS/Motif"
 cp .build/release/motif-cli "$APP/Contents/MacOS/motif-cli"
 
-if [ ! -f build/Motif.icns ]; then
+# Regenerated whenever the drawing changes, so editing the icon doesn't silently keep the cached one.
+if [ ! -f build/Motif.icns ] || [ Scripts/make-icon.swift -nt build/Motif.icns ]; then
   swift Scripts/make-icon.swift build/Motif.iconset && iconutil -c icns build/Motif.iconset -o build/Motif.icns
 fi
 cp build/Motif.icns "$APP/Contents/Resources/Motif.icns"
